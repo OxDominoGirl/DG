@@ -513,6 +513,7 @@
     color:#fff;
     text-shadow:0 1px 3px rgba(0,0,0,0.6);
     min-height:auto;
+    transition:opacity 0.35s ease;
   }
   .room-dialogue-text .yellow{
     color:#fff;
@@ -1680,7 +1681,12 @@ function typeInto(el, html, speed=30){
     }
     if(totalChars === 0){ resolve(); return; }
     let idx = 0;
-    let cursor = 0; // position within current text node
+    let cursor = 0;
+    // Sound rhythm is decoupled from typing speed. Clicks fire at a fixed
+    // cadence (every ~50ms of wall-clock time) regardless of how fast
+    // characters are revealed, so they never overlap into a buzz.
+    const SOUND_INTERVAL_MS = 50;
+    let lastSoundAt = 0;
     const iv = setInterval(() => {
       if(idx >= textNodes.length){
         clearInterval(iv); resolve(); return;
@@ -1688,10 +1694,16 @@ function typeInto(el, html, speed=30){
       const tn = textNodes[idx];
       cursor++;
       tn.node.nodeValue = tn.full.slice(0, cursor);
-      // play typing sound only for visible printable characters
+      // play typing sound only if enough wall-clock time has passed since
+      // the last click — keeps the audio rhythm clean even when text speed
+      // is fast.
       const ch = tn.full[cursor - 1];
       if(ch && ch !== ' ' && ch !== '\n' && ch !== '\t'){
-        try{ playTypingSlice(); }catch(_){}
+        const now = performance.now();
+        if(now - lastSoundAt >= SOUND_INTERVAL_MS){
+          try{ playTypingSlice(); }catch(_){}
+          lastSoundAt = now;
+        }
       }
       if(cursor >= tn.full.length){
         idx++;
@@ -1710,7 +1722,7 @@ async function runDoorway(){
   await typeInto(txt,
     '<span class="dim">Hey!</span><br>' +
     'I was hoping it\'d be <span class="accent">you.</span>',
-    45);
+    20);
   document.getElementById('doorHint').style.visibility = 'visible';
 }
 
@@ -2026,7 +2038,7 @@ function showRoomDialogue(){
     'I\u2019m in the middle of building a <span class="yellow">blockchain analytics dashboard</span>.<br><br>' +
     'If you\u2019re curious about what I\u2019m working on, let\u2019s start with a quick intro.<br><br>' +
     '<span class="choice" id="aboutMeChoice">> About me</span>',
-    55
+    25
   ).then(() => {
     const choiceEl = document.getElementById('aboutMeChoice');
     if(choiceEl){
@@ -2059,7 +2071,7 @@ async function showAboutMe(){
     'I\u2019ve built <span class="yellow">10+ visualizations</span> of the <span class="yellow">MegaETH</span> blockchain, dashboards and transaction bots for <span class="yellow">Aptos Labs</span>, and tools for a Web3 marketing team.<br><br>' +
     'Lately, all I want to do is explore the potential of <span class="yellow">vibe coding</span> and see how far it can take me.<br><br>' +
     '<span class="choice" id="seeBuiltChoice">> See what I\u2019ve built</span>',
-    55
+    25
   );
   // wire the choice handler now that the span exists in the DOM
   const choiceEl = document.getElementById('seeBuiltChoice');
@@ -2082,7 +2094,7 @@ async function showWhatIBuilt(){
     '> <a class="work-link" href="https://oxdominogirl.github.io/KOL-SCOUT/kol-platform.html" target="_blank" rel="noopener noreferrer">KOLScout</a>: a KOL analysis tool for marketing companies' +
     '<br><br>' +
     '<span class="choice" id="getInTouchChoice">> Get in touch with me</span>',
-    35
+    18
   );
   const choiceEl = document.getElementById('getInTouchChoice');
   if(choiceEl){
@@ -2098,7 +2110,7 @@ async function showGetInTouch(){
   textEl.innerHTML = '';
   await typeInto(textEl,
     'Leave your info below.<br><br><span id="contactFormSlot"></span>',
-    35
+    18
   );
   const slot = document.getElementById('contactFormSlot');
   if(!slot) return;
@@ -2155,12 +2167,21 @@ async function showGetInTouch(){
           })
         });
         if(res.ok){
-          // success: swap label to "> sent" and drop the underline so it
-          // reads as a final state, not an actionable button
-          sendBtn.innerHTML = '&gt; sent';
-          sendBtn.style.textDecoration = 'none';
-          sendBtn.style.opacity = '1';
-          sendBtn.style.cursor = 'default';
+          // success: fade out just the dialogue contents (not the whole page)
+          // and replace with the thank-you message. Keeps the room and the
+          // glass box exactly where they were.
+          const textEl = document.getElementById('roomDialogueText');
+          if(textEl){
+            textEl.style.opacity = '0';
+            await new Promise(r => setTimeout(r, 360));
+            textEl.innerHTML = '';
+            textEl.style.opacity = '1';
+            await typeInto(textEl,
+              'thanks for your message!<br><br>' +
+              'i\u2019ll get back to you shortly.',
+              25
+            );
+          }
         }else{
           let err = 'something went wrong. try again in a moment.';
           try{
